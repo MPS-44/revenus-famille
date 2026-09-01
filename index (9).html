@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Budget Famille</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg:#f5f7fb; --card:#fff; --ink:#172033; --muted:#6b7280; --line:#e5e7eb;
+      --primary:#2457c5; --primary2:#173b87; --good:#0f9f6e; --warn:#d97706; --bad:#c2410c;
+    }
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    header{background:linear-gradient(135deg,var(--primary2),var(--primary));color:#fff;padding:22px 18px;position:sticky;top:0;z-index:10;box-shadow:0 8px 24px rgba(23,59,135,.18)}
+    .wrap{max-width:1180px;margin:auto;padding:18px}.top{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.brand h1{font-size:24px;margin:0}.brand p{margin:4px 0 0;opacity:.85}
+    nav{display:flex;gap:8px;flex-wrap:wrap} nav button{border:0;background:rgba(255,255,255,.13);color:#fff;padding:10px 13px;border-radius:10px;cursor:pointer;font-weight:700} nav button.active,nav button:hover{background:#fff;color:var(--primary2)}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 5px 18px rgba(0,0,0,.04)}
+    .kpi .label{font-size:13px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}.kpi .value{font-size:28px;font-weight:800;margin-top:8px}.kpi small{color:var(--muted)}
+    .good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+    .section{margin-top:18px}.section h2{font-size:18px;margin:0 0 12px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar input,.toolbar select,.toolbar button,form input,form select,form textarea{padding:10px 11px;border:1px solid #cfd4dc;border-radius:10px;background:#fff;font:inherit}
+    .btn{background:var(--primary);color:#fff;border:none!important;font-weight:800;cursor:pointer}.btn.secondary{background:#eef3ff;color:var(--primary2)}.btn.danger{background:#fff0ec;color:#b93815}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;border:1px solid var(--line)}th,td{padding:11px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}th{background:#f7f9fc;color:#4b5563}td.num{text-align:right;font-variant-numeric:tabular-nums}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800}.pill.pro{background:#eef3ff;color:#244aa5}.pill.rev{background:#eaf8f2;color:#087f5b}.pill.other{background:#fff4e5;color:#9a5a00}.pill.social{background:#f4edff;color:#6d3eb5}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}form{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.full{grid-column:1/-1}label{font-size:13px;color:#4b5563;font-weight:700;display:flex;flex-direction:column;gap:6px}
+    .progress{height:16px;background:#e9edf3;border-radius:999px;overflow:hidden}.progress>div{height:100%;background:linear-gradient(90deg,var(--warn),var(--good));width:0}.muted{color:var(--muted)}
+    .notice{padding:12px 14px;border-radius:12px;background:#fff8e8;border:1px solid #f4d489;color:#7a5300;margin-bottom:14px}.hidden{display:none!important}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}@media(max-width:620px){.grid{grid-template-columns:1fr}form{grid-template-columns:1fr}.full{grid-column:auto}th:nth-child(4),td:nth-child(4){display:none}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap top">
+    <div class="brand"><h1>Budget Famille</h1><p>Flux, vrais revenus et seuil minimum du foyer</p></div>
+    <nav>
+      <button class="active" data-view="dashboard">Tableau de bord</button>
+      <button data-view="flows">Flux</button>
+      <button data-view="revenues">Revenus</button>
+      <button data-view="expenses">Dépenses fixes</button>
+      <button data-view="settings">Réglages</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <div id="supabaseNotice" class="notice">Mode local actif : les données sont enregistrées dans ce navigateur. Renseigne Supabase dans Réglages pour synchroniser plusieurs PC.</div>
+
+  <section id="dashboard" class="view">
+    <div class="toolbar"><label>Mois <input id="monthPicker" type="month"></label></div>
+    <div class="grid">
+      <div class="card kpi"><div class="label">Flux entrants</div><div id="kpiFlows" class="value">0 €</div><small>Tout ce qui entre</small></div>
+      <div class="card kpi"><div class="label">Revenus disponibles</div><div id="kpiIncome" class="value good">0 €</div><small>Argent réellement disponible</small></div>
+      <div class="card kpi"><div class="label">Dépenses fixes</div><div id="kpiExpenses" class="value bad">0 €</div><small>Équivalent mensuel</small></div>
+      <div class="card kpi"><div class="label">Marge après fixes</div><div id="kpiMargin" class="value">0 €</div><small>Revenus - fixes</small></div>
+    </div>
+    <div class="two section">
+      <div class="card">
+        <h2>Objectif minimum mensuel</h2>
+        <div id="goalText" style="font-size:26px;font-weight:800;margin-bottom:10px">0 €</div>
+        <div class="progress"><div id="goalBar"></div></div>
+        <p id="goalCaption" class="muted"></p>
+      </div>
+      <div class="card">
+        <h2>Répartition des vrais revenus</h2>
+        <table><tbody>
+          <tr><td>Julien</td><td class="num" id="incJulien">0 €</td></tr>
+          <tr><td>Ophélie</td><td class="num" id="incOphelie">0 €</td></tr>
+          <tr><td>Foyer / commun</td><td class="num" id="incCommon">0 €</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+    <div class="section card">
+      <h2>Résumé par source</h2>
+      <table id="summaryTable"><thead><tr><th>Source</th><th>Type</th><th>Personne</th><th class="num">Montant</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section id="flows" class="view hidden">
+    <div class="card">
+      <h2>Ajouter un flux</h2>
+      <form id="flowForm">
+        <label>Date<input required name="date" type="date"></label>
+        <label>Personne<select name="person"><option>Julien</option><option>Ophélie</option><option>Foyer / commun</option></select></label>
+        <label>Source<select name="source" id="flowSource"></select></label>
+        <label>Montant<input required min="0" step="0.01" name="amount" type="number"></label>
+        <label>Statut<select name="status"><option value="encaissé">Encaissé</option><option value="prévu">Prévu</option></select></label>
+        <label class="full">Commentaire<textarea name="note" rows="2"></textarea></label>
+        <div class="full"><button class="btn" type="submit">Ajouter le flux</button></div>
+      </form>
+    </div>
+    <div class="section"><table id="flowsTable"><thead><tr><th>Date</th><th>Personne</th><th>Source</th><th>Statut</th><th class="num">Montant</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="revenues" class="view hidden">
+    <div class="card">
+      <h2>Ajouter un vrai revenu</h2>
+      <form id="incomeForm">
+        <label>Date<input required name="date" type="date"></label>
+        <label>Personne<select name="person"><option>Julien</option><option>Ophélie</option><option>Foyer / commun</option></select></label>
+        <label>Source<select name="source" id="incomeSource"></select></label>
+        <label>Montant<input required min="0" step="0.01" name="amount" type="number"></label>
+        <label>Statut<select name="status"><option value="encaissé">Encaissé</option><option value="prévu">Prévu</option></select></label>
+        <label class="full">Commentaire<textarea name="note" rows="2"></textarea></label>
+        <div class="full"><button class="btn" type="submit">Ajouter le revenu</button></div>
+      </form>
+    </div>
+    <div class="section"><table id="incomeTable"><thead><tr><th>Date</th><th>Personne</th><th>Source</th><th>Statut</th><th class="num">Montant</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="expenses" class="view hidden">
+    <div class="card">
+      <h2>Ajouter une dépense fixe</h2>
+      <form id="expenseForm">
+        <label>Nom<input required name="name" placeholder="Loyer, électricité..."></label>
+        <label>Montant<input required min="0" step="0.01" name="amount" type="number"></label>
+        <label>Fréquence<select name="frequency"><option value="monthly">Mensuelle</option><option value="quarterly">Trimestrielle</option><option value="yearly">Annuelle</option></select></label>
+        <label>Payeur<select name="person"><option>Foyer / commun</option><option>Julien</option><option>Ophélie</option></select></label>
+        <div class="full"><button class="btn" type="submit">Ajouter la dépense</button></div>
+      </form>
+    </div>
+    <div class="section"><table id="expensesTable"><thead><tr><th>Dépense</th><th>Fréquence</th><th>Payeur</th><th class="num">Montant</th><th class="num">Équiv. mensuel</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="settings" class="view hidden">
+    <div class="two">
+      <div class="card">
+        <h2>Objectif du foyer</h2>
+        <label>Objectif mensuel minimum<input id="goalInput" type="number" min="0" step="50"></label>
+        <p class="muted">Si vide ou à 0, l'application utilise automatiquement le total des dépenses fixes mensuelles.</p>
+        <button id="saveGoal" class="btn">Enregistrer</button>
+      </div>
+      <div class="card">
+        <h2>Connexion Supabase</h2>
+        <label>Project URL<input id="sbUrl" placeholder="https://xxxx.supabase.co"></label><br>
+        <label>Anon public key<textarea id="sbKey" rows="5"></textarea></label><br>
+        <button id="saveSupabase" class="btn">Enregistrer et activer</button>
+        <button id="clearSupabase" class="btn danger" style="margin-left:8px">Revenir en local</button>
+        <p class="muted">Les clés sont stockées dans ce navigateur. N'utilise jamais la service_role key côté navigateur.</p>
+      </div>
+    </div>
+    <div class="section card">
+      <h2>SQL à exécuter dans Supabase</h2>
+      <textarea id="sqlBox" class="full" style="width:100%;min-height:330px;font-family:ui-monospace,Consolas,monospace"></textarea>
+    </div>
+  </section>
+</main>
+<script>
+const DEFAULT_SOURCES = {
+  flows:[
+    ['CA SASU','pro'],['CA micro Julien','pro'],['CA micro Ophélie','pro'],['CESU','income'],['France Travail','income'],['CAF','social'],['Vinted','other'],['Leboncoin','other'],['Espèces','other']
+  ],
+  incomes:[
+    ['CESU','income'],['France Travail','income'],['CAF','social'],['Versement SASU → Julien','income'],['Versement micro → Julien','income'],['Versement micro → Ophélie','income'],['Vinted','other'],['Leboncoin','other'],['Espèces','other']
+  ]
+};
+const SQL = `create table if not exists flows (\n  id bigint generated by default as identity primary key,\n  date date not null, person text not null, source text not null,\n  amount numeric not null, status text not null, note text, created_at timestamptz default now()\n);\n\ncreate table if not exists incomes (\n  id bigint generated by default as identity primary key,\n  date date not null, person text not null, source text not null,\n  amount numeric not null, status text not null, note text, created_at timestamptz default now()\n);\n\ncreate table if not exists fixed_expenses (\n  id bigint generated by default as identity primary key,\n  name text not null, amount numeric not null, frequency text not null, person text not null, created_at timestamptz default now()\n);\n\ncreate table if not exists app_settings (\n  key text primary key, value text\n);\n\nalter table flows enable row level security;\nalter table incomes enable row level security;\nalter table fixed_expenses enable row level security;\nalter table app_settings enable row level security;\n\ncreate policy \"public flows\" on flows for all using (true) with check (true);\ncreate policy \"public incomes\" on incomes for all using (true) with check (true);\ncreate policy \"public expenses\" on fixed_expenses for all using (true) with check (true);\ncreate policy \"public settings\" on app_settings for all using (true) with check (true);`;
+
+const euro = v => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(Number(v||0));
+const today = new Date();
+const monthPicker = document.getElementById('monthPicker');
+monthPicker.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+
+document.getElementById('sqlBox').value = SQL;
+DEFAULT_SOURCES.flows.forEach(([n])=>document.getElementById('flowSource').insertAdjacentHTML('beforeend',`<option>${n}</option>`));
+DEFAULT_SOURCES.incomes.forEach(([n])=>document.getElementById('incomeSource').insertAdjacentHTML('beforeend',`<option>${n}</option>`));
+
+let sb = null;
+function cfg(){return {url:localStorage.getItem('sb_url')||'', key:localStorage.getItem('sb_key')||''}}
+function connect(){const c=cfg(); if(c.url&&c.key){sb=window.supabase.createClient(c.url,c.key);document.getElementById('supabaseNotice').classList.add('hidden');}else{sb=null;document.getElementById('supabaseNotice').classList.remove('hidden')}}
+connect();
+
+function localGet(k){return JSON.parse(localStorage.getItem(k)||'[]')}
+function localSet(k,v){localStorage.setItem(k,JSON.stringify(v))}
+async function list(table){if(!sb)return localGet(table); const {data,error}=await sb.from(table).select('*').order('id',{ascending:false}); if(error){alert(error.message);return []} return data||[]}
+async function add(table,row){if(!sb){const a=localGet(table);row.id=Date.now()+Math.random();a.unshift(row);localSet(table,a);return} const {error}=await sb.from(table).insert(row); if(error)alert(error.message)}
+async function remove(table,id){if(!sb){localSet(table,localGet(table).filter(x=>String(x.id)!==String(id)));return} const {error}=await sb.from(table).delete().eq('id',id); if(error)alert(error.message)}
+async function getGoal(){if(!sb)return Number(localStorage.getItem('goal')||0); const {data}=await sb.from('app_settings').select('value').eq('key','goal').maybeSingle(); return Number(data?.value||0)}
+async function setGoal(v){if(!sb){localStorage.setItem('goal',v);return} await sb.from('app_settings').upsert({key:'goal',value:String(v)})}
+function monthlyEq(e){return e.frequency==='yearly'?e.amount/12:e.frequency==='quarterly'?e.amount/3:e.amount}
+function inMonth(x,m){return x.date && x.date.slice(0,7)===m}
+function sourceClass(s){if(s.includes('CA '))return 'pro'; if(s==='CAF')return 'social'; if(['Vinted','Leboncoin','Espèces'].includes(s))return 'other'; return 'rev'}
+
+async function refresh(){
+  const [flows,incomes,expenses,goalStored]=await Promise.all([list('flows'),list('incomes'),list('fixed_expenses'),getGoal()]);
+  const m=monthPicker.value;
+  const fm=flows.filter(x=>inMonth(x,m)&&x.status==='encaissé');
+  const im=incomes.filter(x=>inMonth(x,m)&&x.status==='encaissé');
+  const totalFlows=fm.reduce((s,x)=>s+Number(x.amount),0);
+  const totalIncome=im.reduce((s,x)=>s+Number(x.amount),0);
+  const totalExp=expenses.reduce((s,x)=>s+monthlyEq(x),0);
+  const goal=goalStored>0?goalStored:totalExp;
+  document.getElementById('kpiFlows').textContent=euro(totalFlows);
+  document.getElementById('kpiIncome').textContent=euro(totalIncome);
+  document.getElementById('kpiExpenses').textContent=euro(totalExp);
+  const margin=totalIncome-totalExp; const km=document.getElementById('kpiMargin');km.textContent=euro(margin);km.className='value '+(margin>=0?'good':'bad');
+  document.getElementById('goalText').textContent=euro(goal);
+  const pct=goal?Math.min(100,totalIncome/goal*100):0;document.getElementById('goalBar').style.width=pct+'%';
+  document.getElementById('goalCaption').textContent=goal?`${Math.round(pct)} % atteint — ${totalIncome>=goal?'objectif atteint':euro(goal-totalIncome)+' encore à générer'}`:'Ajoute des dépenses fixes ou définis un objectif.';
+  ['Julien','Ophélie','Foyer / commun'].forEach((p,i)=>document.getElementById(['incJulien','incOphelie','incCommon'][i]).textContent=euro(im.filter(x=>x.person===p).reduce((s,x)=>s+Number(x.amount),0)));
+  renderTable('flowsTable',flows,x=>`<tr><td>${x.date||''}</td><td>${x.person}</td><td>${x.source}</td><td>${x.status}</td><td class="num">${euro(x.amount)}</td><td><button class="btn danger" onclick="delRow('flows','${x.id}')">Suppr.</button></td></tr>`);
+  renderTable('incomeTable',incomes,x=>`<tr><td>${x.date||''}</td><td>${x.person}</td><td>${x.source}</td><td>${x.status}</td><td class="num">${euro(x.amount)}</td><td><button class="btn danger" onclick="delRow('incomes','${x.id}')">Suppr.</button></td></tr>`);
+  renderTable('expensesTable',expenses,x=>`<tr><td>${x.name}</td><td>${x.frequency==='monthly'?'Mensuelle':x.frequency==='quarterly'?'Trimestrielle':'Annuelle'}</td><td>${x.person}</td><td class="num">${euro(x.amount)}</td><td class="num">${euro(monthlyEq(x))}</td><td><button class="btn danger" onclick="delRow('fixed_expenses','${x.id}')">Suppr.</button></td></tr>`);
+  const map={}; fm.forEach(x=>{const k=x.source+'|'+x.person;map[k]=(map[k]||0)+Number(x.amount)}); im.forEach(x=>{const k=x.source+'|'+x.person;map[k]=(map[k]||0)+Number(x.amount)});
+  document.querySelector('#summaryTable tbody').innerHTML=Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{const [s,p]=k.split('|');const cls=sourceClass(s);const type=cls==='pro'?'Flux pro':cls==='social'?'Prestation sociale':cls==='other'?'Autre entrée':'Revenu';return `<tr><td>${s}</td><td><span class="pill ${cls}">${type}</span></td><td>${p}</td><td class="num">${euro(v)}</td></tr>`}).join('')||'<tr><td colspan="4" class="muted">Aucune donnée sur ce mois.</td></tr>';
+  document.getElementById('goalInput').value=goalStored||'';
+  const c=cfg();document.getElementById('sbUrl').value=c.url;document.getElementById('sbKey').value=c.key;
+}
+function renderTable(id,rows,fn){document.querySelector('#'+id+' tbody').innerHTML=rows.map(fn).join('')||'<tr><td colspan="6" class="muted">Aucune donnée.</td></tr>'}
+window.delRow=async(t,id)=>{await remove(t,id);refresh()}
+
+for(const [formId,table] of [['flowForm','flows'],['incomeForm','incomes'],['expenseForm','fixed_expenses']]){
+  document.getElementById(formId).addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);const row=Object.fromEntries(f.entries());row.amount=Number(row.amount);await add(table,row);e.target.reset();if(formId!=='expenseForm')e.target.date.value=new Date().toISOString().slice(0,10);refresh()})
+}
+['flowForm','incomeForm'].forEach(id=>document.querySelector('#'+id+' [name=date]').value=new Date().toISOString().slice(0,10));
+
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));document.getElementById(b.dataset.view).classList.remove('hidden')}));
+monthPicker.addEventListener('change',refresh);
+document.getElementById('saveGoal').onclick=async()=>{await setGoal(Number(document.getElementById('goalInput').value||0));refresh()};
+document.getElementById('saveSupabase').onclick=()=>{localStorage.setItem('sb_url',document.getElementById('sbUrl').value.trim());localStorage.setItem('sb_key',document.getElementById('sbKey').value.trim());connect();refresh();alert('Configuration Supabase enregistrée.')};
+document.getElementById('clearSupabase').onclick=()=>{localStorage.removeItem('sb_url');localStorage.removeItem('sb_key');connect();refresh()};
+refresh();
+</script>
+</body>
+</html>
